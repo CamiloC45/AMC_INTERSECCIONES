@@ -13,64 +13,69 @@ const generatePairs = (n) => {
 };
 
 const AlternativeEvaluation = ({ alternatives, globalItems }) => {
-  // Estado para almacenar los valores ingresados para cada par de alternativas, por ítem global.
-  // Usaremos una clave única (globalKey) para cada ítem global.
+  // Estado para almacenar, para cada ítem global, los datos de cada par.
+  // Estructura: { [globalKey]: { [pairIndex]: { value: string, inverted: boolean } } }
   const [altPairValues, setAltPairValues] = useState({});
   // Estado para almacenar la puntuación global final de cada alternativa.
   const [alternativeScores, setAlternativeScores] = useState({});
 
-  // Función para manejar cambios en el input para un ítem global
+  // Manejar cambio en el deslizador: actualiza la propiedad 'value'
   const handleAltPairValueChange = (globalKey, pairIndex, event) => {
     const rawValue = event.target.value;
     setAltPairValues(prev => ({
       ...prev,
       [globalKey]: {
         ...(prev[globalKey] || {}),
-        [pairIndex]: rawValue
+        [pairIndex]: {
+          ...(prev[globalKey]?.[pairIndex] || { inverted: false }),
+          value: rawValue
+        }
       }
     }));
   };
 
-  // Función para rellenar los valores por defecto (1) en inputs vacíos para cada ítem global
-  const fillDefaultPairValues = () => {
-    const newAltPairValues = { ...altPairValues };
-    globalItems.forEach(item => {
-      const globalKey = item.criterionId + "-" + (item.subcriterionId ? item.subcriterionId : "general");
-      const n = alternatives.length;
-      const pairs = generatePairs(n);
-      if (!newAltPairValues[globalKey]) {
-        newAltPairValues[globalKey] = {};
-      }
-      pairs.forEach((pair, index) => {
-        if (newAltPairValues[globalKey][index] === undefined || newAltPairValues[globalKey][index] === "") {
-          newAltPairValues[globalKey][index] = 1; // Valor por defecto
+  // Manejar el cambio del checkbox de inversión
+  const handleAltPairInversionChange = (globalKey, pairIndex, event) => {
+    const inverted = event.target.checked;
+    setAltPairValues(prev => ({
+      ...prev,
+      [globalKey]: {
+        ...(prev[globalKey] || {}),
+        [pairIndex]: {
+          ...(prev[globalKey]?.[pairIndex] || { value: "1" }),
+          inverted: inverted
         }
-      });
-    });
-    setAltPairValues(newAltPairValues);
+      }
+    }));
   };
 
-  // Cada vez que altPairValues, globalItems o alternatives cambien, recalcular los scores
   useEffect(() => {
     // Inicializar los scores de cada alternativa en 0
     const scores = {};
     alternatives.forEach(alt => { scores[alt.id] = 0; });
 
+    // Para cada ítem global, generar la matriz de comparación para alternativas y calcular el vector de prioridades
     globalItems.forEach(item => {
+      // Generar clave única para este ítem global
       const globalKey = item.criterionId + "-" + (item.subcriterionId ? item.subcriterionId : "general");
       const n = alternatives.length;
       if (n < 2) return; // Se requieren al menos dos alternativas
 
       const pairs = generatePairs(n);
       const pv = altPairValues[globalKey] || {};
-      // Construir la matriz de comparación: n x n con 1 en la diagonal
+      // Construir una matriz n x n con 1 en la diagonal
       const matrix = Array.from({ length: n }, (_, i) =>
         Array.from({ length: n }, (_, j) => (i === j ? 1 : 0))
       );
       pairs.forEach(([i, j], index) => {
-        const value = (pv[index] === undefined || pv[index] === "") ? 1 : parseFloat(pv[index]);
-        matrix[i][j] = value;
-        matrix[j][i] = 1 / value;
+        const pairObj = pv[index] || {};
+        const rawVal = pairObj.value;
+        const inverted = pairObj.inverted;
+        const value = (rawVal === undefined || rawVal === "") ? 1 : parseFloat(rawVal);
+        // Si se marcó invertir, se toma el recíproco como valor para la posición (i,j)
+        const effective = inverted ? 1 / value : value;
+        matrix[i][j] = effective;
+        matrix[j][i] = 1 / effective;
       });
       // Calcular la media geométrica de cada fila
       const geoMeans = matrix.map(row => {
@@ -79,7 +84,7 @@ const AlternativeEvaluation = ({ alternatives, globalItems }) => {
       });
       const sumGeo = geoMeans.reduce((acc, val) => acc + val, 0);
       const altPriority = geoMeans.map(val => val / sumGeo);
-      // Acumular la contribución ponderada (prioridad * globalWeight) para cada alternativa
+      // Acumular la contribución ponderada (prioridad * globalWeight) a cada alternativa
       alternatives.forEach((alt, index) => {
         scores[alt.id] += altPriority[index] * item.globalWeight;
       });
@@ -123,9 +128,13 @@ const AlternativeEvaluation = ({ alternatives, globalItems }) => {
                         Array.from({ length: n }, (_, j) => (i === j ? 1 : 0))
                       );
                       pairs.forEach(([i, j], index) => {
-                        const value = (pv[index] === undefined || pv[index] === "") ? 1 : parseFloat(pv[index]);
-                        matrix[i][j] = value;
-                        matrix[j][i] = 1 / value;
+                        const pairObj = pv[index] || {};
+                        const rawVal = pairObj.value;
+                        const inverted = pairObj.inverted;
+                        const value = (rawVal === undefined || rawVal === "") ? 1 : parseFloat(rawVal);
+                        const effective = inverted ? 1 / value : value;
+                        matrix[i][j] = effective;
+                        matrix[j][i] = 1 / effective;
                       });
                       return matrix.map((row, i) => (
                         <tr key={i}>
@@ -144,26 +153,42 @@ const AlternativeEvaluation = ({ alternatives, globalItems }) => {
                     <li key={index} style={{ marginBottom: '5px' }}>
                       {alternatives[i].name} vs {alternatives[j].name}:
                       <input 
-                        type="number"
+                        type="range"
                         min="1"
                         max="9"
                         step="1"
-                        placeholder="1-9"
-                        style={{ marginLeft: '10px', width: '50px' }}
+                        style={{ marginLeft: '10px' }}
                         onChange={(e) => handleAltPairValueChange(globalKey, index, e)}
                         value={
-                          altPairValues[globalKey] && altPairValues[globalKey][index] !== undefined
-                            ? altPairValues[globalKey][index]
-                            : ""
+                          altPairValues[globalKey] && altPairValues[globalKey][index] && altPairValues[globalKey][index].value !== undefined
+                            ? altPairValues[globalKey][index].value
+                            : "1"
                         }
                       />
+                      <span style={{ marginLeft: '5px' }}>
+                        {altPairValues[globalKey] && altPairValues[globalKey][index] && altPairValues[globalKey][index].value !== undefined
+                          ? altPairValues[globalKey][index].value
+                          : "1"}
+                      </span>
+                      <label style={{ marginLeft: '10px' }}>
+                        <input 
+                          type="checkbox"
+                          onChange={(e) => handleAltPairInversionChange(globalKey, index, e)}
+                          checked={
+                            altPairValues[globalKey] && altPairValues[globalKey][index] && altPairValues[globalKey][index].inverted
+                              ? true
+                              : false
+                          }
+                        />
+                        Invertir
+                      </label>
                     </li>
                   ))}
                 </ul>
               </div>
             );
           })}
-          
+          <hr />
           <h3>Resultados Globales de Alternativas</h3>
           <ul>
             {Object.entries(alternativeScores)

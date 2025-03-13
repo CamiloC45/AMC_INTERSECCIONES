@@ -11,10 +11,13 @@ const generatePairs = (array) => {
   return pairs;
 };
 
-const SubcriteriaComparison = ({ selectedCriteria, selectedSubcriteria, allCriteria, pairValues, setPairValues }) => {
-  // Declaramos el estado para almacenar los valores ingresados para cada par,
-  // en un objeto con clave = criterio y valor = objeto con índice de par y valor ingresado.
-
+const SubcriteriaComparison = ({
+  selectedCriteria,
+  selectedSubcriteria,
+  allCriteria,
+  pairValues,
+  setPairValues
+}) => {
   // Obtener detalles completos de los criterios seleccionados
   const selectedCriteriaDetails = allCriteria.filter(criterion =>
     selectedCriteria.includes(criterion.id)
@@ -28,20 +31,36 @@ const SubcriteriaComparison = ({ selectedCriteria, selectedSubcriteria, allCrite
     );
   }
   
-  // Función para manejar el cambio en el input para un par
+  // Función para manejar el cambio en el deslizador (valor) para un par
   const handlePairValueChange = (criterionId, pairIndex, event) => {
-    const value = parseFloat(event.target.value);
-    if (value >= 1 && value <= 9) {
-      setPairValues(prev => ({
-        ...prev,
-        [criterionId]: {
-          ...(prev[criterionId] || {}),
-          [pairIndex]: value,
+    const rawValue = event.target.value; // Valor del slider (string)
+    setPairValues(prev => ({
+      ...prev,
+      [criterionId]: {
+        ...(prev[criterionId] || {}),
+        [pairIndex]: {
+          ...((prev[criterionId] && prev[criterionId][pairIndex]) || { inverted: false }),
+          value: rawValue
         }
-      }));
-    }
+      }
+    }));
   };
-  
+
+  // Función para manejar el cambio del checkbox de inversión
+  const handleInversionChange = (criterionId, pairIndex, event) => {
+    const inverted = event.target.checked;
+    setPairValues(prev => ({
+      ...prev,
+      [criterionId]: {
+        ...(prev[criterionId] || {}),
+        [pairIndex]: {
+          ...((prev[criterionId] && prev[criterionId][pairIndex]) || { value: "1" }),
+          inverted: inverted
+        }
+      }
+    }));
+  };
+
   return (
     <div>
       {selectedCriteriaDetails.map(criterion => {
@@ -81,20 +100,43 @@ const SubcriteriaComparison = ({ selectedCriteria, selectedSubcriteria, allCrite
             <ul style={{ listStyleType: 'none', paddingLeft: 0 }}>
               {pairs.map((pair, index) => (
                 <li key={index} style={{ marginBottom: '5px' }}>
-                  {pair[0].name} vs {pair[1].name} 
+                  {pair[0].name} vs {pair[1].name}:
                   <input 
-                    type="number"
+                    type="range"
                     min="1"
                     max="9"
-                    placeholder="1-9"
-                    style={{ marginLeft: '10px', width: '50px' }}
+                    step="1"
+                    style={{ marginLeft: '10px' }}
                     onChange={(e) => handlePairValueChange(criterion.id, index, e)}
                     value={
-                      pairValues[criterion.id] && pairValues[criterion.id][index] 
-                        ? pairValues[criterion.id][index]
-                        : ''
+                      pairValues[criterion.id] &&
+                      pairValues[criterion.id][index] &&
+                      pairValues[criterion.id][index].value !== undefined
+                        ? pairValues[criterion.id][index].value
+                        : "1"
                     }
                   />
+                  <span style={{ marginLeft: '5px' }}>
+                    {pairValues[criterion.id] &&
+                    pairValues[criterion.id][index] &&
+                    pairValues[criterion.id][index].value !== undefined
+                      ? pairValues[criterion.id][index].value
+                      : "1"}
+                  </span>
+                  <label style={{ marginLeft: '10px' }}>
+                    <input 
+                      type="checkbox"
+                      onChange={(e) => handleInversionChange(criterion.id, index, e)}
+                      checked={
+                        pairValues[criterion.id] &&
+                        pairValues[criterion.id][index] &&
+                        pairValues[criterion.id][index].inverted
+                          ? true
+                          : false
+                      }
+                    />
+                    Invertir
+                  </label>
                 </li>
               ))}
             </ul>

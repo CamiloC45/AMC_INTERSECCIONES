@@ -12,48 +12,66 @@ const generatePairs = (n) => {
 };
 
 const CriteriaAHP = ({ selectedCriteria, allCriteria, setCriteriaPriority }) => {
-  // Filtra los criterios completos seleccionados
+  // Filtrar los criterios seleccionados
   const selectedCriteriaDetails = allCriteria.filter(criterion =>
     selectedCriteria.includes(criterion.id)
   );
 
-  // Estado para almacenar los valores ingresados para cada par (clave: índice del par, valor: string)
+  // Estado para almacenar los valores de comparación para cada par
+  // Estructura: { [pairIndex]: { value: string, inverted: boolean } }
   const [pairValues, setPairValues] = useState({});
   // Estados para la matriz de comparación y el vector de prioridades
   const [matrix, setMatrix] = useState([]);
   const [priorityVector, setPriorityVector] = useState([]);
 
-  // Genera los pares de índices para los criterios seleccionados
+  // Genera los pares de índices según la cantidad de criterios seleccionados
   const pairs = generatePairs(selectedCriteriaDetails.length);
 
-  // Manejar el cambio del valor en el input; se guarda como string para permitir borrar.
+  // Manejador para el slider: actualiza la propiedad 'value'
   const handlePairValueChange = (pairIndex, event) => {
-    const rawValue = event.target.value;
+    const rawValue = event.target.value; // valor como string
     setPairValues(prev => ({
       ...prev,
-      [pairIndex]: rawValue
+      [pairIndex]: {
+        ...((prev[pairIndex]) || { inverted: false }),
+        value: rawValue
+      }
     }));
   };
 
-  // Cada vez que cambien los pairValues o la cantidad de criterios, recalcula la matriz y el vector
+  // Manejador para el checkbox de inversión
+  const handleInversionChange = (pairIndex, event) => {
+    const inverted = event.target.checked;
+    setPairValues(prev => ({
+      ...prev,
+      [pairIndex]: {
+        ...((prev[pairIndex]) || { value: "1" }),
+        inverted: inverted
+      }
+    }));
+  };
+
+  // Cada vez que cambien pairValues o la cantidad de criterios, recalcula la matriz y el vector
   useEffect(() => {
     const n = selectedCriteriaDetails.length;
     if (n < 2) {
       setMatrix([]);
       setPriorityVector([]);
-      setCriteriaPriority([]); //Eleva un vector vacio su ni hay suficientes criterios
+      setCriteriaPriority([]);
       return;
     }
     // Inicializa la matriz n x n con 1 en la diagonal
     const newMatrix = Array.from({ length: n }, (_, i) =>
       Array.from({ length: n }, (_, j) => (i === j ? 1 : 0))
     );
-    // Para cada par, usa el valor ingresado (o 1 si está vacío) y asigna el recíproco
+    // Para cada par, se extrae el objeto correspondiente y se calcula el valor efectivo
     pairs.forEach(([i, j], index) => {
-      const rawVal = pairValues[index];
+      const pairObj = pairValues[index] || {};
+      const rawVal = pairObj.value;
       const value = (rawVal === undefined || rawVal === "") ? 1 : parseFloat(rawVal);
-      newMatrix[i][j] = value;
-      newMatrix[j][i] = 1 / value;
+      const effective = pairObj.inverted ? 1 / value : value;
+      newMatrix[i][j] = effective;
+      newMatrix[j][i] = 1 / effective;
     });
     // Calcular la media geométrica de cada fila
     const geoMeans = newMatrix.map(row => {
@@ -64,7 +82,7 @@ const CriteriaAHP = ({ selectedCriteria, allCriteria, setCriteriaPriority }) => 
     const newPriorityVector = geoMeans.map(val => val / sumGeo);
     setMatrix(newMatrix);
     setPriorityVector(newPriorityVector);
-    setCriteriaPriority(newPriorityVector); //Eleva el vector de prioridades
+    setCriteriaPriority(newPriorityVector); // Eleva el vector de prioridades al padre
   }, [pairValues, selectedCriteriaDetails.length, pairs, setCriteriaPriority]);
 
   return (
@@ -77,17 +95,27 @@ const CriteriaAHP = ({ selectedCriteria, allCriteria, setCriteriaPriority }) => 
           <ul style={{ listStyleType: 'none', padding: 0 }}>
             {pairs.map(([i, j], index) => (
               <li key={index} style={{ marginBottom: '5px' }}>
-                {selectedCriteriaDetails[i] ? selectedCriteriaDetails[i].name : "N/A"} vs {selectedCriteriaDetails[j] ? selectedCriteriaDetails[j].name : "N/A"}:
+                {selectedCriteriaDetails[i]?.name || "N/A"} vs {selectedCriteriaDetails[j]?.name || "N/A"}:
                 <input 
-                  type="number"
+                  type="range"
                   min="1"
                   max="9"
                   step="1"
-                  placeholder="1-9"
-                  style={{ marginLeft: '10px', width: '50px' }}
+                  style={{ marginLeft: '10px' }}
                   onChange={(e) => handlePairValueChange(index, e)}
-                  value={pairValues[index] !== undefined ? pairValues[index] : ""}
+                  value={pairValues[index] && pairValues[index].value !== undefined ? pairValues[index].value : "1"}
                 />
+                <span style={{ marginLeft: '5px' }}>
+                  {pairValues[index] && pairValues[index].value !== undefined ? pairValues[index].value : "1"}
+                </span>
+                <label style={{ marginLeft: '10px' }}>
+                  <input 
+                    type="checkbox"
+                    onChange={(e) => handleInversionChange(index, e)}
+                    checked={pairValues[index] && pairValues[index].inverted ? true : false}
+                  />
+                  Invertir
+                </label>
               </li>
             ))}
           </ul>
@@ -97,14 +125,14 @@ const CriteriaAHP = ({ selectedCriteria, allCriteria, setCriteriaPriority }) => 
               <tr>
                 <th></th>
                 {selectedCriteriaDetails.map((crit, idx) => (
-                  <th key={idx}>{crit ? crit.name : "N/A"}</th>
+                  <th key={idx}>{crit?.name || "N/A"}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {matrix.map((row, i) => (
                 <tr key={i}>
-                  <th>{selectedCriteriaDetails[i] ? selectedCriteriaDetails[i].name : "N/A"}</th>
+                  <th>{selectedCriteriaDetails[i]?.name || "N/A"}</th>
                   {row.map((val, j) => (
                     <td key={j}>{val.toFixed(3)}</td>
                   ))}
@@ -116,7 +144,7 @@ const CriteriaAHP = ({ selectedCriteria, allCriteria, setCriteriaPriority }) => 
           <ul>
             {priorityVector.map((val, idx) => (
               <li key={idx}>
-                {selectedCriteriaDetails[idx] ? selectedCriteriaDetails[idx].name : "N/A"}: {val.toFixed(3)}
+                {selectedCriteriaDetails[idx]?.name || "N/A"}: {val.toFixed(3)}
               </li>
             ))}
           </ul>
